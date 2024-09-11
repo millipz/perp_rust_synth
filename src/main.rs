@@ -14,12 +14,23 @@ struct Voice {
     amplitude: f32,
     start_time: Instant,
     is_active: bool,
+    envelope_state: EnvelopeState,
+    current_envelope_value: f32,
+}
+
+enum EnvelopeState {
+    Attack,
+    Decay,
+    Sustain,
+    Release,
 }
 
 struct Synth {
     voices: HashMap<u8, Voice>,
     sample_rate: f32,
     attack_time: f32,
+    decay_time: f32,
+    sustain_level: f32,
     release_time: f32,
 }
 
@@ -28,21 +39,30 @@ impl Synth {
         Synth {
             voices: HashMap::new(),
             sample_rate,
-            attack_time: 0.01, // 10ms attack
-            release_time: 0.1, // 100ms release
+            attack_time: 0.01,
+            decay_time: 0.1,
+            sustain_level: 0.7,
+            release_time: 0.2,
         }
     }
 
     fn note_on(&mut self, note: u8, velocity: u8) {
         let freq = 440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0);
+        let phase = if let Some(existing_voice) = self.voices.get(&note) {
+            existing_voice.phase
+        } else {
+            0.0
+        };
         self.voices.insert(
             note,
             Voice {
                 frequency: freq,
-                phase: 0.0,
+                phase,
                 amplitude: velocity as f32 / 127.0,
                 start_time: Instant::now(),
                 is_active: true,
+                envelope_state: EnvelopeState::Attack,
+                current_envelope_value: 0.0,
             },
         );
     }
@@ -50,7 +70,24 @@ impl Synth {
     fn note_off(&mut self, note: u8) {
         if let Some(voice) = self.voices.get_mut(&note) {
             voice.is_active = false;
-            voice.start_time = Instant::now(); // Reset start time for release phase
+            voice.start_time = Instant::now();
+            voice.envelope_state = EnvelopeState::Release;
+        }
+    }
+
+    fn smooth_transition(start: f32, end: f32, t: f32) -> f32 {
+        start + (end - start) * (1.0 - (-5.0 * t).exp())
+    }
+
+    fn poly_blep(t: f32, dt: f32) -> f32 {
+        if t < dt {
+            let t = t / dt;
+            2.0 * t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            let t = (t - 1.0) / dt;
+            t * t + 2.0 * t + 1.0
+        } else {
+            0.0
         }
     }
 
@@ -61,18 +98,46 @@ impl Synth {
 
         self.voices.retain(|_, voice| {
             let elapsed = now.duration_since(voice.start_time).as_secs_f32();
-            let envelope = if voice.is_active {
-                // Note is still pressed, apply attack
-                (elapsed / self.attack_time).min(1.0)
-            } else {
-                // Note is released, apply exponential release
-                (-elapsed / self.release_time).exp()
+            let target_envelope = match voice.envelope_state {
+                EnvelopeState::Attack => {
+                    let t = elapsed / self.attack_time;
+                    if t >= 1.0 {
+                        voice.envelope_state = EnvelopeState::Decay;
+                        voice.start_time = now;
+                        1.0
+                    } else {
+                        Self::smooth_transition(0.0, 1.0, t)
+                    }
+                }
+                EnvelopeState::Decay => {
+                    let t = elapsed / self.decay_time;
+                    let env = Self::smooth_transition(1.0, self.sustain_level, t);
+                    if env <= self.sustain_level {
+                        voice.envelope_state = EnvelopeState::Sustain;
+                        self.sustain_level
+                    } else {
+                        env
+                    }
+                }
+                EnvelopeState::Sustain => self.sustain_level,
+                EnvelopeState::Release => {
+                    let t = elapsed / self.release_time;
+                    Self::smooth_transition(voice.current_envelope_value, 0.0, t)
+                }
             };
 
-            if envelope > 0.001 {
-                // Add a small threshold to remove very quiet voices
-                sum += (voice.phase * 2.0 * PI).sin() * voice.amplitude * envelope;
-                voice.phase += voice.frequency / self.sample_rate;
+            // Smooth the envelope transition
+            voice.current_envelope_value += (target_envelope - voice.current_envelope_value) * 0.01;
+
+            if voice.current_envelope_value > 0.001 {
+                let dt = voice.frequency / self.sample_rate;
+
+                // Generate a sawtooth wave with polyBLEP anti-aliasing
+                let mut sample = 2.0 * voice.phase - 1.0;
+                sample -= Self::poly_blep(voice.phase, dt);
+
+                sum += sample * voice.amplitude * voice.current_envelope_value;
+                voice.phase += dt;
                 if voice.phase >= 1.0 {
                     voice.phase -= 1.0;
                 }
@@ -90,15 +155,12 @@ impl Synth {
             0.0
         };
 
-        // Soft clipping
-        if output.abs() <= 0.8 {
-            output
-        } else {
-            output.signum() * (0.8 + 0.2 * (1.0 - (-5.0 * (output.abs() - 0.8)).exp()))
-        }
+        // Improved soft clipping using tanh
+        (output * 0.8).tanh()
     }
 }
 
+// The rest of the code (main function, etc.) remains the same
 fn main() -> Result<(), Box<dyn Error>> {
     let host = cpal::default_host();
     let device = host
