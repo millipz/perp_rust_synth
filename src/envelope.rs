@@ -11,10 +11,10 @@ pub struct EnvelopeParams {
 impl Default for EnvelopeParams {
     fn default() -> Self {
         EnvelopeParams {
-            attack_time: 0.01,
-            decay_time: 0.1,
+            attack_time: 0.005,
+            decay_time: 0.02,
             sustain_level: 0.7,
-            release_time: 0.2,
+            release_time: 0.01,
         }
     }
 }
@@ -22,13 +22,13 @@ impl Default for EnvelopeParams {
 #[derive(Clone)]
 pub struct Envelope {
     params: EnvelopeParams,
-    state: EnvelopeState,
+    pub state: EnvelopeState,
     value: f32,
     start_time: Instant,
 }
 
 #[derive(Clone, PartialEq)]
-enum EnvelopeState {
+pub enum EnvelopeState {
     Attack,
     Decay,
     Sustain,

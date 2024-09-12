@@ -24,17 +24,16 @@ impl Synth {
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         let freq = 440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0);
-        let voice = Voice::new(freq, velocity, self.envelope_params.clone());
-        self.voices.insert(note, voice);
-        println!(
-            "Note ON - Note: {}, Velocity: {}, Frequency: {:.2}",
-            note, velocity, freq
-        );
-        println!("Active voices after note on: {}", self.voices.len());
-        println!(
-            "Voice HashMap keys: {:?}",
-            self.voices.keys().collect::<Vec<&u8>>()
-        );
+
+        // Only create a new voice if one doesn't already exist for this note
+        if !self.voices.contains_key(&note) {
+            let voice = Voice::new(freq, velocity, self.envelope_params.clone());
+            self.voices.insert(note, voice);
+            println!(
+                "Note ON - Note: {}, Velocity: {}, Frequency: {:.2}",
+                note, velocity, freq
+            );
+        }
     }
 
     pub fn note_off(&mut self, note: u8) {
@@ -49,42 +48,34 @@ impl Synth {
 
     pub fn generate_sample(&mut self) -> f32 {
         let mut sum = 0.0;
-        let mut active_voices = 0;
+        let active_voices = self.voices.len() as f32;
 
         for (_note, voice) in self.voices.iter_mut() {
             if voice.is_active() {
                 let sample = self.oscillator.generate(voice.phase) * voice.current_amplitude();
                 sum += sample;
                 voice.update(1.0 / self.sample_rate);
-                active_voices += 1;
             }
         }
 
         // Remove inactive voices
         self.voices.retain(|_, voice| voice.is_active());
 
-        let output = if active_voices > 0 {
-            sum / (active_voices as f32).sqrt()
+        // Increase the volume and apply soft clipping
+        let output = if active_voices > 0.0 {
+            (sum / active_voices.sqrt()) * 2.0 // Increase volume
         } else {
             0.0
         };
+        let final_output = output.tanh(); // Soft clipping
 
-        let final_output = (output * 0.8).tanh();
-
-        // Debug output (print every 1000 samples)
-        if self.sample_count % 100000 == 0 {
+        // Debug output (print every 44100 samples, which is about once per second at 44.1kHz)
+        if self.sample_count % 44100 == 0 {
             println!(
-                "Generate sample called. Active voices: {}, Output: {:.4}, Voice count: {}",
-                active_voices,
-                final_output,
-                self.voices.len()
+                "Active voices: {}, Output: {:.4}",
+                self.voices.len(),
+                final_output
             );
-            if !self.voices.is_empty() {
-                println!(
-                    "Voice HashMap keys: {:?}",
-                    self.voices.keys().collect::<Vec<&u8>>()
-                );
-            }
         }
         self.sample_count += 1;
 

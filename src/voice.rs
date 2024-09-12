@@ -1,4 +1,4 @@
-use crate::envelope::{Envelope, EnvelopeParams};
+use crate::envelope::{Envelope, EnvelopeParams, EnvelopeState};
 
 #[derive(Clone)]
 pub struct Voice {
@@ -27,8 +27,8 @@ impl Voice {
         }
         self.envelope.update(dt);
 
-        // Debug print (every 100 updates)
-        if self.update_count % 100 == 0 {
+        // Debug print (every 44100 updates, which is about once per second at 44.1kHz)
+        if self.update_count % 44100 == 0 {
             println!(
                 "Voice update - Frequency: {:.2}, Amplitude: {:.4}, Is active: {}",
                 self.frequency,
@@ -39,19 +39,18 @@ impl Voice {
         self.update_count += 1;
     }
 
-    pub fn current_amplitude(&self) -> f32 {
-        self.amplitude * self.envelope.value()
-    }
-
     pub fn is_active(&self) -> bool {
-        let is_active = self.envelope.is_active();
-        if !is_active {
-            println!("Voice became inactive - Frequency: {:.2}", self.frequency);
-        }
-        is_active
+        self.envelope.is_active()
     }
 
     pub fn release(&mut self) {
-        self.envelope.release();
+        if !matches!(self.envelope.state, EnvelopeState::Release) {
+            self.envelope.release();
+            println!("Voice released - Frequency: {:.2}", self.frequency);
+        }
+    }
+
+    pub fn current_amplitude(&self) -> f32 {
+        self.amplitude * self.envelope.value()
     }
 }
