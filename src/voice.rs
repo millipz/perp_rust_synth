@@ -1,15 +1,37 @@
 use crate::envelope::{Envelope, EnvelopeParams, EnvelopeState};
 
+/// Represents a single voice in the synthesizer.
+///
+/// A voice is a single sound-producing entity that can be controlled
+/// independently. It has its own frequency, phase, amplitude, and envelope.
 #[derive(Clone)]
 pub struct Voice {
+    /// The frequency of the voice, in Hz.
     pub frequency: f32,
+    /// The current phase of the voice, in the range [0, 1).
     pub phase: f32,
+    /// The amplitude of the voice, in the range [0, 1).
     amplitude: f32,
+    /// The envelope of the voice, which controls its amplitude over time.
     envelope: Envelope,
+    /// The number of updates that have been performed on the voice.
     update_count: usize,
 }
 
 impl Voice {
+    /// Creates a new voice with the given frequency, velocity, and envelope parameters.
+    ///
+    /// The velocity is used to set the initial amplitude of the voice.
+    ///
+    /// # Parameters
+    ///
+    /// * `frequency`: The frequency of the voice, in Hz.
+    /// * `velocity`: The velocity of the voice, in the range [0, 127].
+    /// * `envelope_params`: The parameters of the envelope.
+    ///
+    /// # Returns
+    ///
+    /// A new voice with the given parameters.
     pub fn new(frequency: f32, velocity: u8, envelope_params: EnvelopeParams) -> Self {
         Voice {
             frequency,
@@ -20,6 +42,14 @@ impl Voice {
         }
     }
 
+    /// Updates the voice by the given time step.
+    ///
+    /// This method updates the phase and amplitude of the voice, and also
+    /// updates the envelope.
+    ///
+    /// # Parameters
+    ///
+    /// * `dt`: The time step to update by.
     pub fn update(&mut self, dt: f32) {
         self.phase += self.frequency * dt;
         if self.phase >= 1.0 {

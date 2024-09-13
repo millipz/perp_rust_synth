@@ -4,10 +4,21 @@ use std::sync::{Arc, Mutex};
 
 use super::synth::Synth;
 
+/// Sets up a MIDI input connection to receive MIDI messages.
+///
+/// This function takes a `MidiInput` instance and a shared `Synth` instance,
+/// and returns a `MidiInputConnection` instance that can be used to receive
+/// MIDI messages.
+///
+/// # Errors
+///
+/// If there is an error setting up the MIDI input connection, a `Box<dyn Error>`
+/// instance is returned.
 pub fn setup_midi_input(
     mut midi_in: MidiInput,
     synth: Arc<Mutex<Synth>>,
 ) -> Result<MidiInputConnection<()>, Box<dyn Error>> {
+    // Ignore all MIDI messages that are not note on or note off messages.
     midi_in.ignore(Ignore::None);
 
     let in_ports = midi_in.ports();
